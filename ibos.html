@@ -1,0 +1,2255 @@
+<!DOCTYPE html>
+<!--
+  Copyright 2010 Google Inc.
+
+  Licensed under the Apache License, Version 2.0 (the "License");
+  you may not use this file except in compliance with the License.
+  You may obtain a copy of the License at
+
+     http://www.apache.org/licenses/LICENSE-2.0
+
+  Unless required by applicable law or agreed to in writing, software
+  distributed under the License is distributed on an "AS IS" BASIS,
+  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+  See the License for the specific language governing permissions and
+  limitations under the License.
+
+  Original slides: Marcin Wichary (mwichary@google.com)
+  Modifications: Ernest Delgado (ernestd@google.com)
+                 Alex Russell (slightlyoff@chromium.org)
+                 Brad Neuberg
+-->
+<!--
+    Modification: Shuo Tang (stang6@illinois.edu)
+-->
+<html manifest="cache.manifest">
+  <head>
+    <meta charset="utf-8" />
+    <meta http-equiv="X-UA-Compatible" content="IE=Edge;chrome=1" />
+    <title>IBOS OSDI Presentation</title>
+    <script>
+      var drawArrow = function(ctx, x1, y1, x2, y2, width, strokeStyle) {
+      ctx.strokeStyle = strokeStyle;
+      ctx.lineWidth = width;
+      r0 = 30*Math.PI/180;
+      var edge = 15;
+      r1 = Math.atan(1.0*(x2-x1)/(y2-y1));
+      if (r1 >= 0 || r1 <= -1*Math.PI/2) {
+        r2 = r0-r1;
+        r3 = r0+r1;
+      } else {
+        r2 = r0-r1+Math.PI;
+        r3 = r0+r1+Math.PI;
+      }
+      
+      x3 = x2+edge*Math.sin(r2);
+      y3 = y2-edge*Math.cos(r2);
+      x4 = x2-edge*Math.sin(r3);
+      y4 = y2-edge*Math.cos(r3);
+      
+      ctx.beginPath();
+      ctx.moveTo(x1,y1);
+      ctx.lineTo(x2,y2);
+      ctx.moveTo(x3,y3);
+      ctx.lineTo(x2,y2);
+      ctx.moveTo(x4,y4);
+      ctx.lineTo(x2,y2);
+      ctx.stroke();
+      }
+    </script>
+    <style>
+      body {
+        font: 16px "Lucida Grande", "Trebuchet MS", Verdana, sans-serif;
+        padding: 0;
+        margin: 0;
+        width: 100%;
+        height: 100%;
+        position: absolute;
+        left: 0px; top: 0px;
+      }
+
+      .presentation {
+        position: absolute;
+        height: 100%;
+        width: 100%;
+        left: 0px;
+        top: 0px;
+        display: block;
+        overflow: hidden;
+        background: #778;
+      }
+
+      .slides {
+        width: 100%;
+        height: 100%;
+        left: 0;
+        top: 0;
+        position: absolute;
+        display: block;
+        -webkit-transition: -webkit-transform 1s ease-in-out;
+        -moz-transition: -moz-transform 1s ease-in-out;
+        -o-transition: -o-transform 1s ease-in-out;
+        transition: transform 1s ease-in-out;
+      }
+
+      .slide {
+        display: none;
+        position: absolute;
+        overflow: hidden;
+        width: 900px;
+        height: 700px;
+        left: 50%;
+        top: 50%;
+        margin-top: -350px;
+        background-color: #1e487c;
+        //-webkit-transition: margin 0.25s ease-in-out;
+        //-moz-transition: margin 0.25s ease-in-out;
+        //-o-transition: margin 0.25s ease-in-out;
+        //transition: margin 0.25s ease-in-out;
+        color: white;
+      }
+
+      .slide:nth-child(even) {
+        -moz-border-radius: 20px 0;
+        -khtml-border-radius: 20px 0;
+        border-radius: 20px 0; /* includes Opera 10.5+ */
+        -webkit-border-top-left-radius: 20px;
+        -webkit-border-bottom-right-radius: 20px;
+      }
+
+      .slide:nth-child(odd) {
+        -moz-border-radius: 0 20px;
+        -khtml-border-radius: 0 20px;
+        border-radius: 0 20px;
+        -webkit-border-top-right-radius: 20px;
+        -webkit-border-bottom-left-radius: 20px;
+      }
+
+      .slide p, .slide textarea {
+        font-size: 25px;
+        color: white;
+      }
+
+      .slide .counter {
+        color: #999999;
+        position: absolute;
+        left: 20px;
+        bottom: 20px;
+        display: block;
+        font-size: 12px;
+      }
+
+      .slide.title > .counter,
+      .slide.segue > .counter,
+      .slide.mainTitle > .counter {
+        display: none;
+      }
+
+      .force-render {
+        display: block;
+        visibility: hidden;
+      }
+      
+      .slide.far-past {
+        display: block;
+        margin-left: -2800px;
+      }
+      
+      .slide.past {
+        visibility: visible;
+        display: block;
+        margin-left: -1600px;
+      }
+      
+      .slide.current {
+        visibility: visible;
+        display: block;
+        margin-left: -450px;
+      }
+      
+      .slide.future {
+        visibility: visible;
+        display: block;
+        margin-left: 700px;
+      }
+      
+      .slide.far-future {
+        display: block;
+        margin-left: 1900px;
+      }
+
+      body.three-d div.presentation {
+        /*background: -webkit-gradient(radial, 50% 50%, 10, 50% 50%, 1000, from(#333), to(#000));        */
+      }
+      
+      body.three-d div.slides {
+        -webkit-transform: translateX(50px) scale(0.8) rotateY(10deg);
+        -moz-transform: translateX(50px) scale(0.8) rotateY(10deg);
+        -o-transform: translateX(50px) scale(0.8) rotateY(10deg);
+        transform: translateX(50px) scale(0.8) rotateY(10deg);
+      }
+      
+      /* Content */
+      /*
+        Font sizes:
+        header h1 - 50px
+        h2, p - 20px
+        default, pre, input - 16px
+      */
+      
+      @font-face { font-family: 'Droid Sans'; src: url(src/DroidSans.ttf); }
+      
+      header {
+        font-family: 'Droid Sans';
+        font-weight: normal;
+        letter-spacing: -.05em;
+        color: white;
+        text-shadow: rgba(0, 0, 0, 0.2) 0 2px 5px;
+        position: absolute;
+        left: 0px;
+        width: 100%;
+        text-align: center;
+        top: 25px;
+        margin: 0;
+        padding: 0;
+        font-size: 50px;
+      }
+      
+      h1 {
+        font-size: 100%;
+        display: inline;
+      	font-weight: normal;
+      	padding: 0;
+      	margin: 0;
+      }
+      
+      h2 {
+        font-family: 'Droid Sans';
+        color: black;
+        font-size: 20px;
+        padding: 0;
+        margin: 15px 0 5px 0;
+      }
+            
+      h2:first-child {
+        margin-top: 0;
+      }
+
+      section, footer {
+        font-family: 'Droid Sans';
+        color: white;
+        text-shadow: rgba(0, 0, 0, 0.2) 0 2px 5px;
+        margin: 100px 30px 0;
+        display: block;
+        overflow: hidden;
+      }
+      
+      footer {
+        font-size: 12px;
+        margin: 20px 0 0 30px;
+      }
+
+      a {
+        color: inherit;
+        Display: inline-block;
+        text-decoration: none;
+        line-height: 110%;
+        border-bottom: 2px solid #3f3f3f;
+      }
+
+      .gmap a {
+        line-height: 100%;
+        border-bottom: none;
+      }
+
+      li {
+        list-style: disc;
+        padding: 10px 0;
+      }
+
+      li.sub{
+        list-style: square;
+      }
+
+      button {
+        font-size: 20px;
+      }
+      
+      pre button {
+        margin: 2px;
+      }
+      
+      .summary {
+        font-size: 30px;
+      }
+
+      .bullets {
+        font-size: 35px;
+      }
+      
+      section.left {
+        float: left;
+        width: 390px;
+      }
+      
+      section.small {
+        font-size: 24px;
+      }
+      
+      section.small ul {
+        margin: 0 0 0 15px;
+        padding: 0;
+      }
+      
+      section.small li {
+        padding-bottom: 0;
+      }
+            
+      section.middle {
+        line-height: 68px;
+        text-align: center;
+        display: table-cell;
+        vertical-align: middle;
+        height: 700px;
+        width: 900px;
+      }
+      
+      pre {
+        text-align: left;
+        font-family: 'Droid Sans Mono', Courier;        
+        padding: 10px 20px;
+        background: rgba(255, 0, 0, 0.05);
+        -webkit-border-radius: 8px;
+        -khtml-border-radius: 8px;
+        -moz-border-radius: 8px;
+        border-radius: 8px;
+        border: 1px solid rgba(255, 0, 0, 0.2);
+      }
+      
+      pre select {
+        font-family: Monaco, Courier;
+        border: 1px solid #c61800;
+      }
+        
+      input {
+        font-size: 16px;
+        margin-right: 10px;
+        font-family: Helvetica;
+        padding: 3px;
+      }
+      input[type="range"] {
+        width: 100%;
+      }
+      
+      button {
+        margin: 20px 10px 0 0;
+        font-family: Verdana;
+      }
+      
+      button.large {
+        font-size: 32px;
+      }
+        
+      pre b {
+        font-weight: normal;
+        color: #c61800;
+        text-shadow: #c61800 0 0 1px;
+        /*letter-spacing: -1px;*/
+      }
+      pre em {
+        font-weight: normal;
+        font-style: normal;
+        color: #18a600;
+        text-shadow: #18a600 0 0 1px;
+      }
+      pre input[type="range"] {
+        height: 6px;
+        cursor: pointer;
+        width: auto;
+      }
+      
+      div.example {
+        display: block;
+        padding: 10px 20px;
+        color: black;
+        background: rgba(255, 255, 255, 0.4);
+        -webkit-border-radius: 8px;
+        -khtml-border-radius: 8px;
+        -moz-border-radius: 8px;
+        border-radius: 8px;
+        margin-bottom: 10px;
+        border: 1px solid rgba(0, 0, 0, 0.2);
+      }
+      
+      video {
+        -moz-border-radius: 8px;
+        -khtml-border-radius: 8px;
+        -webkit-border-radius: 8px;
+        border-radius: 8px;
+        border: 1px solid rgba(0, 0, 0, 0.2);
+      }
+      
+      .css,
+      .js,
+      .html,
+      .key {
+        font-family: 'Droid Sans';
+        color: black;
+        display: inline-block;
+        padding: 6px 10px 3px 10px;
+        font-size: 25px;
+        line-height: 30px;
+        text-shadow: none;
+        letter-spacing: 0;
+        bottom: 10px;
+        position: relative;
+        -moz-border-radius: 10px;
+        -khtml-border-radius: 10px;
+        -webkit-border-radius: 10px;
+        border-radius: 10px;
+        background: white;
+        box-shadow: rgba(0, 0, 0, 0.1) 0 2px 5px;
+        -webkit-box-shadow: rgba(0, 0, 0, 0.1) 0 2px 5px;
+        -moz-box-shadow: rgba(0, 0, 0, 0.1) 0 2px 5px;
+        -o-box-shadow: rgba(0, 0, 0, 0.1) 0 2px 5px;
+      }
+      
+      .key { font-family: Arial; }
+      
+      :not(header) > .css,
+      :not(header) > .js,
+      :not(header) > .html,
+      :not(header) > .key {
+        margin: 0 5px;
+        bottom: 4px;
+      }
+      
+      .css {
+        background: -webkit-gradient(linear, left top, left bottom, from(#ff4), to(#ffa));
+        background-color: #ff4;
+        background: -moz-linear-gradient(left top, #ff4, #ffa);
+      }
+      .js {
+        background: -webkit-gradient(linear, left top, left bottom, from(#4f4), to(#afa));
+        background-color: #4f4;
+        background: -moz-linear-gradient(left top, #4f4, #afa);
+      }
+      .html {
+        background: -webkit-gradient(linear, left top, left bottom, from(#e88), to(#fee));
+        background-color: #e88;
+        background: -moz-linear-gradient(left top, #e88, #fee);
+      }
+
+      .two-column {
+        -webkit-column-count: 2;
+        -moz-column-count: 2;
+        column-count: 2;
+      }
+      
+      //.summary li::before, .bullets li::before {
+      //  content: '· ';
+      //}
+
+      .stroke {
+        -webkit-text-stroke-color: red;
+        -webkit-text-stroke-width: 1px;
+      } /* currently webkit-only */
+      
+      .center {
+        text-align: center;
+      }
+      
+      .formula {
+        font-size: 50px;
+      }
+      
+      #presentation-counter {
+        color: #ccc;
+        font-size: 100px;
+        letter-spacing: 1px;
+        position: absolute;
+        top: 40%;
+        left: 0;
+        width: 100%;
+        text-align: center;
+      }
+      
+      .hsl-value {
+        display: inline-block;
+        width: 50px;
+      }
+      .trusted {
+      border-style:solid;
+      border-width:4px;
+      border-color:#B22222;
+      background-color:#CD5C5C;
+      font-size:25px;
+      text-align:center;
+      color:#fff;
+      }
+      .untrusted {
+      border-style:solid;
+      border-width:4px;
+      border-color:#B22222;
+      background-color:#fff;
+      font-size:25px;
+      color:#000;
+      text-align:center;
+      }
+      .vertical {
+      -webkit-transform: rotate(90deg);
+      -moz-transform: rotate(90deg);
+      }
+    </style>
+    <script type="text/javascript">
+      var _gaq = _gaq || [];
+      _gaq.push(['_setAccount', 'UA-3598266-1']);
+      _gaq.push(['_trackPageview']);
+
+      (function() {
+        var ga = document.createElement('script'); ga.type = 'text/javascript'; ga.async = true;
+        ga.src = ('https:' == document.location.protocol ? 'https://ssl' : 'http://www') + '.google-analytics.com/ga.js';
+        var s = document.getElementsByTagName('script')[0]; s.parentNode.insertBefore(ga, s);
+      })();
+    </script>
+  </head>
+  <body>
+    <script>
+      document.body.style.zoom = window.innerHeight / 750.0;                       
+    </script>
+    <div class="presentation">
+      <div id="presentation-counter"></div>
+      <div class="slides">
+        <div class="slide">
+          <style>
+            .intro h1, .intro h2 {
+              color: white;
+            }
+            .intro h1 {
+              letter-spacing: -2px;
+              font-size: 60px;
+            }
+            .intro h2 {
+              margin-top: -5px;
+              font-size: 30px;
+              letter-spacing: -1px;
+            }
+          </style>
+          <section class="middle intro">
+            <hgroup>
+              <h1>Trust and Protection in the Illinois Browser Operating System</h1>
+              <h2>Shuo Tang, Haohui Mai, and Sam King</h2>
+            </hgroup>
+            <style>
+              #uiuc {
+              width: 60%;
+              margin: 30px auto;
+              display: block;
+              }
+            </style>
+            <img id="uiuc" src="src/uiuc.png" />
+          </section>
+        </div>
+
+        <div class="slide">
+          <header>The Web is ubiquitous</header>
+          <section>
+            <ul class="bullets">Email, banking, social networking, and more</ul>
+            <style>
+              #web {
+              width: 80%;
+              margin: 30px auto;
+              display: block;
+              }
+            </style>
+            <img id="web" src="src/web.png" />
+          </section>
+        </div>
+
+        <div class="slide" id="slide_attacks">
+          <header>Attacks at different layers</header>
+          <section>
+            <style>
+              #animals {
+              width:80%;
+              border-collapse:collapse;
+              margin: 30px auto;
+              }
+              #animals tr {
+              visibility:hidden;
+              }
+              #animals td {
+              font-size: 25px;
+              padding:0px;
+              text-align:center;
+              }
+              #animals img {
+              width:240px
+              }
+            </style>
+            <table id="animals">
+              <tr id="bee">
+                <td><img src="src/bee.jpg" /></td>
+                <td>Web app vulnerabilities</td>
+              </tr>
+              <tr id="snake">
+                <td><img src="src/snake.jpg" /></td>
+                <td>Browser vulnerabilities</td>
+              </tr>
+              <tr id="shark">
+                <td><img src="src/shark.jpg" /></td>
+                <td>OS & lib vulnerabilities</td>
+              </tr>
+            </table>
+            <script>
+              var att_counter = 0;
+              document.getElementById("slide_attacks").animate = function() {
+                if (att_counter == 0) {
+                  document.getElementById("bee").style.visibility="visible";
+                  att_counter++;
+                  return true;
+                }
+                if (att_counter == 1) {
+                  document.getElementById("snake").style.visibility="visible";
+                  att_counter++;
+                  return true;
+                }
+                if (att_counter == 2) {
+                  document.getElementById("shark").style.visibility="visible";
+                  att_counter++;
+                  return true;
+                }
+                return false;
+              };
+              document.getElementById("slide_attacks").revert = function() {
+                if (att_counter == 1) {
+                  document.getElementById("bee").style.visibility="hidden";
+                  att_counter--;
+                  return true;
+                }
+                if (att_counter == 2) {
+                  document.getElementById("snake").style.visibility="hidden";
+                  att_counter--;
+                  return true;
+                }
+                if (att_counter == 3) {
+                  document.getElementById("shark").style.visibility="hidden";
+                  att_counter--;
+                  return true;
+                }
+                return false;
+              }; 
+            </script>
+
+          </section>
+        </div>
+
+        <div class="slide">
+          <header>Defend at lower layers</header>
+          <section>
+            <table id="animals">
+              <tr>
+                <td><img src="src/bee.jpg" /></td>
+                <td>Web app vulnerabilities</td>
+              </tr>
+              <tr style="visibility:visible">
+                <td><img src="src/snake.jpg" /></td>
+                <td>Browser vulnerabilities</td>
+              </tr>
+              <tr style="visibility:visible">
+                <td><img src="src/shark.jpg" /></td>
+                <td>OS & lib vulnerabilities</td>
+              </tr>
+            </table>
+          </section>
+        </div>
+        
+        <div class="slide">
+          <header>Insecure web browsers</header>
+          
+          <section>
+            <ul class="bullets">
+              <li>Monolithic</li>
+              <ul class="summary"><li class="sub">All in one address space</li></ul>
+              <li>Easy to exploit</li>
+            </ul>
+            <div style="position:absolute; left:550px; top:250px;">
+              <div class="trusted" style="width:200px; height:250px; position:absolute; left:0px; top:0px;">
+                <div class="untrusted vertical" style="width:150px; height:40px; position:absolute; left:-35px; top:70px; line-height:40px">Web App </div>
+                <div class="untrusted vertical" style="width:150px; height:40px; position:absolute; left:20px; top:70px; line-height:40px">Web App </div>
+                <div class="untrusted vertical" style="width:150px; height:40px; position:absolute; left:75px; top:70px; line-height:40px">Web App </div>
+                <span style="line-height:400px;">Firefox</span>
+              </div>
+              <div class="trusted" style="width:200px; height:100px; position:absolute; left:0px; top:250px; line-height:100px;">
+                Windows
+              </div>
+            </div>
+            <p class="center" style="position:absolute; left:490px; top:600px; font-size:22px">Red indicates trusted computing base</p>
+          </section>
+        </div> 
+
+        <div class="slide">
+          <header>Secure web browsers not enough</header>
+          
+          <section>
+            <ul class="bullets">
+              <li>Isolate web apps</li>
+              <ul class="summary"><li class="sub">Contain attacks</li></ul>
+              <li>Still have huge trusted computing base (TCB)</li>
+            </ul>
+            <div style="position:absolute; left:300px; top:350px">
+              <div class="untrusted vertical" style="width:160px; height:80px; position:absolute; left:0px; top:0px; line-height:80px">Web App </div>
+              <div class="untrusted vertical" style="width:160px; height:80px; position:absolute; left:150px; top:0px; line-height:80px">Web App </div>
+              <div class="untrusted vertical" style="width:160px; height:80px; position:absolute; left:300px; top:0px; line-height:80px">Web App </div>
+              
+              <div class="trusted" style="width:380px; height:50px; position:absolute; left:40px; top:120px; line-height:50px">
+                OP/Chrome Browser Kernel
+              </div>
+              <div class="trusted" style="width:380px; height:100px; position:absolute; left:40px; top:170px; line-height:150px;">
+                <div class="trusted" style="width:100px; height:35px; position:absolute; left:20px; top:5px; line-height:35px;">TPC/IP</div>
+                <div class="trusted" style="width:100px; height:35px; position:absolute; left:140px; top:5px; line-height:35px;">X Server</div>
+                <div class="trusted" style="width:100px; height:35px; position:absolute; left:260px; top:5px; line-height:35px;">File Sys.</div>
+                <div class="trusted" style="width:100px; height:35px; position:absolute; left:20px; top:50px; line-height:35px;">Drivers</div>
+              Linux
+              </div>
+            </div>
+          </section>
+        </div>
+
+        <div class="slide" id="slide_microkernel">
+          <header>Microkernel solves all problems?</header>
+          
+          <section>
+            <ul class="bullets">
+              <li>Better isolation</li>
+              <li>But...</li>
+              <ul class="summary" style="visibility:hidden" id="still">
+                <li class="sub">Still needs to trust all the components</li>
+              </ul>
+            </ul>
+            <div style="position:absolute; left:200px; top:500px; line-height:40px">
+              <div class="trusted vertical" style="width:200px; height:40px; position:absolute; left:0px; top:0px;">Browser Kernel </div>
+              <div class="untrusted vertical" style="background-color:#FF6347; width:200px; height:40px; position:absolute; left:100px; top:0px;">TCP/IP </div>
+              <div class="untrusted vertical" style="background-color:#FF6347; width:200px; height:40px; position:absolute; left:160px; top:0px;">X Server</div>
+              <div class="untrusted vertical" style="background-color:#FF6347; width:200px; height:40px; position:absolute; left:220px; top:0px;">File Sys. </div>
+              <div class="untrusted vertical" style="background-color:#FF6347; width:200px; height:40px; position:absolute; left:280px; top:0px;">Drivers </div>
+              <div class="untrusted vertical" style="width:200px; height:40px; position:absolute; left:380px; top:0px;">Web App </div>
+              <div class="untrusted vertical" style="width:200px; height:40px; position:absolute; left:440px; top:0px;">Web App </div>
+              <div class="untrusted vertical" style="width:200px; height:40px; position:absolute; left:500px; top:0px;">Web App </div>
+              
+              <div class="trusted" style="width:540px; height:50px; position:absolute; left:80px; top:120px; line-height:50px">
+                Microkernel
+              </div>
+            </div>
+          </section>
+          <script>
+            var microkernel_counter = 0;
+            document.getElementById("slide_microkernel").animate = function() {
+              if (microkernel_counter == 0) {
+                document.getElementById("still").style.visibility="visible";
+                microkernel_counter++;
+                return true;
+              }
+              return false;
+            };
+            document.getElementById("slide_microkernel").revert = function() {
+              if (microkernel_counter == 1) {
+                document.getElementById("still").style.visibility="hidden";
+                microkernel_counter--;
+                return true;
+              }
+              return false;
+            }; 
+
+          </script>
+        </div>
+
+        <div class="slide">
+          <header>Illinois Browser Operating System (IBOS)</header>
+          
+          <section>
+            <ul class="bullets">
+              <li>Goal: design new OS to make a single app more secure</li>
+              <li>Reduced TCB for web browser</li>
+            </ul>
+            <style>
+              .greenline {
+              border-style:solid; border-width:2px; border-color:green; position:absolute; 
+              }
+            </style>
+            <div style="position:absolute; left:200px; top:450px; line-height:40px">
+              <div class="untrusted vertical" style="width:200px; height:40px; position:absolute; left:0px; top:0px; text-decoration:line-through">Browser kernel </div>
+              <div class="untrusted vertical" style="background-color:#FAEBD7; width:200px; height:40px; position:absolute; left:100px; top:0px;">TCP/IP </div>
+              <div class="untrusted vertical" style="background-color:#FAEBD7; width:200px; height:40px; position:absolute; left:160px; top:0px;">X Server</div>
+              <div class="untrusted vertical" style="background-color:#FAEBD7; width:200px; height:40px; position:absolute; left:220px; top:0px;">File Sys. </div>
+              <div class="untrusted vertical" style="background-color:#FAEBD7; width:200px; height:40px; position:absolute; left:280px; top:0px;">Drivers </div>
+              <div class="untrusted vertical" style="width:200px; height:40px; position:absolute; left:380px; top:0px;">Web App </div>
+              <div class="untrusted vertical" style="width:200px; height:40px; position:absolute; left:440px; top:0px;">Web App </div>
+              <div class="untrusted vertical" style="width:200px; height:40px; position:absolute; left:500px; top:0px;">Web App </div>
+
+              <div style="border-style:dashed; border-width:3px; border-color:#B22222; position:absolute; left:25px; top:145px; width:650px"></div>
+              <p class="center" style="position:absolute; left:-100px; top: 85px">Browser Abstrations</p>
+              <div class="greenline" style="left:200px; top:126px; height:42px"></div>
+              <div class="greenline" style="left:260px; top:126px; height:42px"></div>
+              <div class="greenline" style="left:320px; top:126px; height:42px"></div>
+              <div class="greenline" style="left:380px; top:126px; height:42px"></div>
+              <div class="greenline" style="left:480px; top:126px; height:42px"></div>
+              <div class="greenline" style="left:540px; top:126px; height:42px"></div>
+              <div class="greenline" style="left:600px; top:126px; height:42px"></div>
+
+              <div class="trusted" style="width:540px; height:50px; position:absolute; left:80px; top:170px; line-height:50px">
+                IBOS Kernel
+              </div>
+            </div>
+          </section>
+        </div>
+        
+        <div class="slide">
+          <header>IBOS overview</header>
+          
+          <section>
+            <ul class="bullets">
+              <li>IBOS architecture</li>
+              <li>Security invariants</li>
+              <li>Applying security invariants to IBOS</li>
+              <li>Evaluation</li>
+              <li>Conclusion</li>
+            </ul>
+          </section>
+        </div> 
+
+        <div class="slide">
+          <header>IBOS architecture</header>
+          <section>
+            <style>
+              .vertical-middle {
+              display: table-cell;
+              vertical-align: middle;
+              text-align: center;
+              }
+            </style>
+            <div style="position:absolute; top:100px; left:100px">
+              <div class="untrusted" style="width:150px; height:150px; position:absolute; left:0px; top:0px;">
+                <div style="position:absolute; width:100%; top:35%">Traditional App</div>
+              </div>
+              <div class="untrusted" style="width:150px; height:50px; position:absolute; left:0px; top:150px; line-height:50px">
+                Unix Layer
+              </div>
+
+              <div class="untrusted" style="width:150px; height:200px; position:absolute; left:200px; top:0px">
+                <div style="position:absolute; width:100%; top:35%">Web Page Instance</div>
+              </div>
+              <div class="untrusted" style="width:150px; height:200px; position:absolute; left:370px; top:0px;">
+                <div style="position:absolute; width:100%; top:35%">Web Page Instance</div>
+              </div>
+              <div class="untrusted" style="width:150px; height:200px; position:absolute; left:540px; top:0px">
+                <div style="position:absolute; width:100%; top:35%">Web Page Instance</div>
+              </div>
+
+              <div class="untrusted" style="width:690px; height:100px; position:absolute; left:0px; top:202px;">
+                <div class="untrusted" style="width:250px; height:30px; position:absolute; left:0px; top:0px; line-height:30px; color:#B22222; border-width:0px">
+                  Browser Abstrations
+                </div>
+                <div class="untrusted" style="width:150px; height:40px; position:absolute; left:50px; top:40px; line-height:40px;">UI</div>
+                <div class="untrusted" style="width:150px; height:40px; position:absolute; left:265px; top:40px; line-height:40px;">Storage</div>
+                <div class="untrusted" style="width:150px; height:40px; position:absolute; left:460px; top:20px; line-height:40px;">Net Process</div>
+                <div class="untrusted" style="width:150px; height:40px; position:absolute; left:470px; top:30px; line-height:40px;">Net Process</div>
+                <div class="untrusted" style="width:150px; height:40px; position:absolute; left:480px; top:40px; line-height:40px;">Net Process</div>
+              </div>
+
+              <div class="untrusted" style="width:690px; height:50px; position:absolute; left:0px; top:300px; line-height:50px">Device Drivers</div>
+
+              <div class="trusted" style="width:690px; height:50px; position:absolute; left:0px; top:350px; line-height:50px">IBOS Kernel</div>
+              <div class="trusted" style="width:690px; height:50px; position:absolute; left:0px; top:400px; line-height:50px">Hardware</div>
+              <div style="width:890px; position:absolute; left:-95px; top:450px">
+                <p class="center">Make browser abstractions first-class OS abstractions</p>
+                <p class="center">Maintain browser security policy even if
+                  components completely compromised</p>
+              </div>
+            </div>
+          </section>
+        </div>
+
+        <div class="slide" id="slide_inv">
+          <header>Security invariants</header>
+          <section>
+            <p class="center" style="visibility:hidden" id="inv_1">Real-world invariant: see fireworks on the fourth of July</p>
+            <style>
+              #inv {
+              width: 80%;
+              margin: 30px auto;
+              display: block;
+              visibility: hidden;
+              }
+            </style>
+            <img id="inv" src="src/inv.png" />
+            <p class="center" style="visibility:hidden" id="inv_2">Check key properties without understanding the implementation</p>
+            <p class="center" style="visibility:hidden" id="inv_3">Challenge: check security properties using security invariants</p>
+          </section>
+          <script>
+            var inv_counter = 0;
+            document.getElementById("slide_inv").animate = function() {
+              if (inv_counter == 0) {
+                document.getElementById("inv_1").style.visibility="visible";
+                document.getElementById("inv").style.visibility="visible";
+                inv_counter++;
+                return true;
+              }
+              if (inv_counter == 1) {
+                document.getElementById("inv_2").style.visibility="visible";
+                inv_counter++;
+                return true;
+              }
+              if (inv_counter == 2) {
+                document.getElementById("inv_3").style.visibility="visible";
+                inv_counter++;
+                return true;
+              }
+              return false;
+            };
+            document.getElementById("slide_inv").revert = function() {
+              if (inv_counter == 1) {
+                document.getElementById("inv_1").style.visibility="hidden";
+                document.getElementById("inv").style.visibility="hidden";
+                inv_counter--;
+                return true;
+              }
+              if (inv_counter == 2) {
+                document.getElementById("inv_2").style.visibility="hidden";
+                inv_counter--;
+                return true;
+              }
+              if (inv_counter == 3) {
+                document.getElementById("inv_3").style.visibility="hidden";
+                inv_counter--;
+                return true;
+              }
+              return false;
+            }; 
+          </script>
+
+        </div>
+
+        <div class="slide">
+          <header>IBOS label</header>
+          <section>
+            <ul class="bullets">
+              <li>Browser related label</li>
+              <ul class="summary">
+                <li class="sub">Origin &lt protocol, domain, port &gt</li>
+                <div style="width:600px; height:200px;">
+                  <span style="position:absolute; left:250px; top:270px; color: white">http://www.cs.uiuc.edu:80</span>
+                  <canvas id="label" width="350" height="50" style="position:absolute; left:250px; top:315px;"></canvas>
+                  <span style="position:absolute; left:250px; top:370px; color: white; font-size:20px">protocol</span>
+                  <span style="position:absolute; left:420px; top:370px; color: white; font-size:20px">domain</span>
+                  <span style="position:absolute; left:560px; top:370px; color: white; font-size:20px">port</span>
+                  <script>
+                    var label_ctx = document.getElementById("label").getContext("2d");
+                    label_ctx.lineWidth = 4;
+                    label_ctx.strokeStyle = "#CD5C5C";
+                    
+                    label_ctx.beginPath();
+                    label_ctx.moveTo(5,10);
+                    label_ctx.quadraticCurveTo(5,30,10,30);
+                    label_ctx.lineTo(35, 30);
+                    label_ctx.quadraticCurveTo(40,30,40,40);
+                    label_ctx.quadraticCurveTo(40,30,45,30);
+                    label_ctx.lineTo(70, 30);
+                    label_ctx.quadraticCurveTo(75,30,75,10);
+                    label_ctx.stroke();
+
+                    label_ctx.beginPath();
+                    label_ctx.moveTo(85,10);
+                    label_ctx.quadraticCurveTo(85,30,90,30);
+                    label_ctx.lineTo(190, 30);
+                    label_ctx.quadraticCurveTo(195,30,195,40);
+                    label_ctx.quadraticCurveTo(195,30,200,30);
+                    label_ctx.lineTo(300, 30);
+                    label_ctx.quadraticCurveTo(305,30,305,10);
+                    label_ctx.stroke();  
+
+                    label_ctx.beginPath();
+                    label_ctx.moveTo(315,10);
+                    label_ctx.quadraticCurveTo(315,30,320,30);
+                    label_ctx.lineTo(325, 30);
+                    label_ctx.quadraticCurveTo(330,30,330,40);
+                    label_ctx.quadraticCurveTo(330,30,335,30);
+                    label_ctx.lineTo(340, 30);
+                    label_ctx.quadraticCurveTo(345,30,345,10);
+                    label_ctx.stroke();  
+                  </script>
+                </div>
+                <li class="sub">Inferred and labeled by kernel</li>
+              </ul>
+            </ul>
+          </section>
+        </div>
+
+        <div class="slide" id="slide_webapp">
+          <header>Isolate web apps</header>
+          <section>
+            <style>
+              #label1, #label2 {
+              visibility:hidden;
+              }
+            </style>
+            <div style="position:absolute; top:100px; left:70px">
+              <p class="center" style="position:absolute; left:-40px; top:20px">http://www.google.com</p>
+              <div class="untrusted" style="width:180px; height:180px; position:absolute; left:0px; top:80px;">
+                <div style="position:absolute; width:100%; top:35%">Web Page Instance</div>
+                <div id="label1" class="trusted" style="width:100px; height:40px; position:absolute; left:38px; top:137px; line-height:40px">google</div>
+              </div>
+
+              <p class="center" style="position:absolute; left:-40px; top:290px">http://www.cs.uiuc.edu</p>
+              <div class="untrusted" style="width:180px; height:180px; position:absolute; left:0px; top:350px;">
+                <div style="position:absolute; width:100%; top:35%">Web Page Instance</div>
+                <div id="label2" class="trusted" style="width:100px; height:40px; position:absolute; left:38px; top:137px; line-height:40px">uiuc</div>
+              </div>
+            </div>
+            <script>
+              var webapp_counter = 0;
+              document.getElementById("slide_webapp").animate = function() {
+                if (webapp_counter == 0) {
+                  document.getElementById("label1").style.visibility="visible";
+                  document.getElementById("label2").style.visibility="visible";
+                  webapp_counter++;
+                  return true;
+                }
+                return false;
+              }
+              document.getElementById("slide_webapp").revert = function() {
+                if (webapp_counter == 1) {
+                  document.getElementById("label1").style.visibility="hidden";
+                  document.getElementById("label2").style.visibility="hidden";
+                  webapp_counter--;
+                  return true;
+                }
+                return false;
+              }
+            </script>
+          </section>
+        </div>
+
+        <div class="slide">
+          <header>Isolate net processes</header>
+          <section>
+            <div style="position:absolute; top:100px; left:70px">
+              <div class="untrusted" style="width:180px; height:180px; position:absolute; left:0px; top:80px;">
+                <div style="position:absolute; width:100%; top:35%">Web Page Instance</div>
+                <div class="trusted" style="width:100px; height:40px; position:absolute; left:38px; top:137px; line-height:40px">google</div>
+              </div>
+
+              <div class="untrusted" style="width:180px; height:180px; position:absolute; left:0px; top:350px;">
+                <div style="position:absolute; width:100%; top:35%">Web Page Instance</div>
+                <div class="trusted" style="width:100px; height:40px; position:absolute; left:38px; top:137px; line-height:40px">uiuc</div>
+              </div>
+
+              <p style="position:absolute; left:200px; top:60px; width:370px; font-size:20px">GET: google.com</p>
+              <div class="untrusted" style="width:250px; height:100px; position:absolute; left:520px; top:40px; line-height:60px">
+                Net Process
+                <div class="trusted" style="width:100px; height:40px; position:absolute; left:10px; top:57px; line-height:40px;">google</div>
+                <div class="trusted" style="width:100px; height:40px; position:absolute; left:135px; top:57px; line-height:40px">google</div>
+              </div>
+
+              <p style="position:absolute; left:200px; top:200px; width:370px; font-size:20px">GET: ads.com/somead.jpg</p>
+              <div class="untrusted" style="width:250px; height:100px; position:absolute; left:520px; top:160px; line-height:60px">
+                Net Process
+                <div class="trusted" style="width:100px; height:40px; position:absolute; left:10px; top:57px; line-height:40px;">google</div>
+                <div class="trusted" style="width:100px; height:40px; position:absolute; left:135px; top:57px; line-height:40px">ads.com</div>
+              </div>
+
+              <p style="position:absolute; left:200px; top:300px; width:370px; font-size:20px">GET: ads.com/anotherad.jpg</p>
+              <div class="untrusted" style="width:250px; height:100px; position:absolute; left:520px; top:300px; line-height:60px">
+                Net Process
+                <div class="trusted" style="width:100px; height:40px; position:absolute; left:10px; top:57px; line-height:40px;">uiuc</div>
+                <div class="trusted" style="width:100px; height:40px; position:absolute; left:135px; top:57px; line-height:40px">ads.com</div>
+              </div>
+
+              <p style="position:absolute; left:200px; top:450px; width:370px; font-size:20px">GET: cs.uiuc.edu</p>
+              <div class="untrusted" style="width:250px; height:100px; position:absolute; left:520px; top:420px; line-height:60px">
+                Net Process
+                <div class="trusted" style="width:100px; height:40px; position:absolute; left:10px; top:57px; line-height:40px;">uiuc</div>
+                <div class="trusted" style="width:100px; height:40px; position:absolute; left:135px; top:57px; line-height:40px">uiuc</div>
+              </div>
+
+              <canvas id="netproc" width="340" height="550" style="position:absolute; left:184px;"></canvas>
+              <script>
+                var netproc_canvas = document.getElementById("netproc");
+                var ctx = netproc_canvas.getContext("2d");
+                ctx.strokeStyle = "#CD5C5C";
+                ctx.lineWidth = 4;
+
+                drawArrow(ctx, 0, 170, 340, 90, 4, "#CD5C5C");
+                drawArrow(ctx, 0, 170, 340, 210, 4, "#CD5C5C");
+                drawArrow(ctx, 0, 440, 340, 350, 4, "#CD5C5C");
+                drawArrow(ctx, 0, 440, 340, 470, 4, "#CD5C5C");
+              </script>
+            </div>
+          </section>
+        </div>
+
+        <div class="slide" id="slide_driver">
+          <header>Split driver architecture</header>
+          <section>
+            <style>
+              #eth {
+              font-size: 25px;
+              width: 50px;
+              position: absolute;
+              top: 120px;
+              left: 50px;
+              visibility: hidden;
+              }
+              #arr1 {
+              position: absolute;
+              top: 108px;
+              left: 120px;
+              visibility: hidden;
+              }
+              #check {
+              min-width: 200px;
+              font-size: 25px;
+              text-shadow: white 0 0 5px;
+              position: absolute;
+              top: 110px;
+              left: 175px;
+              color: #B22222;
+              visibility: hidden;
+              }
+              #dma {
+              font-size: 25px;
+              position: absolute;
+              top: 120px;
+              left: 420px;
+              visibility: hidden;
+              }
+              #arr2 {
+              position: absolute;
+              top: 108px;
+              left: 460px;
+              visibility: hidden;
+              }
+              #settx {
+              font-size: 25px;
+              position: absolute;
+              top: 110px;
+              left: 540px;
+              visibility: hidden;
+              }
+              #arr3 {
+              position:absolute;
+              top: 108px;
+              left: 560px;
+              visibility: hidden;
+              }
+              #valid {
+              min-width: 200px;
+              font-size: 25px;
+              text-shadow: white 0 0 5px;
+              position: absolute;
+              top: 125px;
+              left: 600px;
+              color: #B22222;
+              visibility: hidden;
+              }
+
+
+            </style>
+
+            <div style="position:absolute; top:125px; left:100px">
+              <div class="untrusted" style="width:250px; height:100px; position:absolute; left:0px; top:0px; line-height:60px">
+                Net Process
+                <div class="trusted" style="width:100px; height:40px; position:absolute; left:10px; top:57px; line-height:40px;">uiuc</div>
+                <div class="trusted" style="width:100px; height:40px; position:absolute; left:135px; top:57px; line-height:40px">ads.com</div>
+              </div>
+
+              <div class="untrusted" style="width:150px; height:100px; position:absolute; left:500px; top:0px; line-height:100px">
+                NIC Driver
+              </div>
+
+              <div class="trusted" style="width:580px; height:100px; position:absolute; left:100px; top:225px; line-height:100px">
+                IBOS Kernel
+                <div class="trusted" style="width:180px; height:46px; border-style:dashed; position:absolute; left:0px; top:50px; line-height:46px">DMA Buffer</div>
+                <div class="trusted" style="width:100px; height:96px; border-style:dashed; position:absolute; left:476px; top:0px; line-height:25px"><br>NIC Ver. Logic</div>
+              </div>
+
+              <img src="src/nic.jpg" style="position:absolute; left:500px; top:400px; width:150px; height:150px" />
+
+              <p id="eth">Eth Frames</p>
+              <canvas id="arr1" height="130" width="80"></canvas>
+              <p id="check">Check TCP Port<br>Check IP Address</p>
+              <p id="dma">DMA Addr</p>
+              <canvas id="arr2" height="130" width="80"></canvas>
+              <p id="settx">Set Tx Buf</p>
+              <canvas id="arr3" height="300" width="80"></canvas>
+              <p id="valid">Validate Tx Buf</p>
+              
+              <script>
+                drawArrow(document.getElementById("arr1").getContext("2d"), 10, 0, 60, 117, 4, "#CD5C5C");
+                drawArrow(document.getElementById("arr2").getContext("2d"), 10, 117, 60, 0, 4, "#CD5C5C");
+                drawArrow(document.getElementById("arr3").getContext("2d"), 25, 0, 25, 290, 4, "#CD5C5C");
+                var driver_counter = 0;
+                document.getElementById("slide_driver").animate = function() {
+                if (driver_counter == 0) {
+                  document.getElementById("eth").style.visibility="visible";
+                  document.getElementById("arr1").style.visibility="visible";
+                  driver_counter++;
+                  return true;
+                }
+                if (driver_counter == 1) {
+                  document.getElementById("check").style.visibility="visible";
+                  driver_counter++;
+                  return true;
+                }
+                if (driver_counter == 2) {
+                  document.getElementById("dma").style.visibility="visible";
+                  document.getElementById("arr2").style.visibility="visible";
+                  driver_counter++;
+                  return true;
+                }
+                if (driver_counter == 3) {
+                  document.getElementById("settx").style.visibility="visible";
+                  document.getElementById("arr3").style.visibility="visible";
+                  driver_counter++;
+                  return true;
+                }
+                if (driver_counter == 4) {
+                  document.getElementById("valid").style.visibility="visible";
+                  driver_counter++;
+                  return true;
+                }
+                return false;
+                };
+                document.getElementById("slide_driver").revert = function() {
+                if (driver_counter == 1) {
+                  document.getElementById("eth").style.visibility="hidden";
+                  document.getElementById("arr1").style.visibility="hidden";
+                  driver_counter--;
+                  return true;
+                }
+                if (driver_counter == 2) {
+                  document.getElementById("check").style.visibility="hidden";
+                  driver_counter--;
+                  return true;
+                }
+                if (driver_counter == 3) {
+                  document.getElementById("dma").style.visibility="hidden";
+                  document.getElementById("arr2").style.visibility="hidden";
+                  driver_counter--;
+                  return true;
+                }
+                if (driver_counter == 4) {
+                  document.getElementById("settx").style.visibility="hidden";
+                  document.getElementById("arr3").style.visibility="hidden";
+                  driver_counter--;
+                  return true;
+                }
+                if (driver_counter == 5) {
+                  document.getElementById("valid").style.visibility="hidden";
+                  driver_counter--;
+                  return true;
+                }
+                return false;
+              }; 
+              </script>
+
+            </div>
+          </section>
+        </div>
+        
+        <div class="slide">
+          <header>Basic frame buffer driver</header>
+          <section>
+            <div style="position:absolute; top: 150px; left:100px">
+              <div class="untrusted" style="width:180px; height:180px; position:absolute; left:0px; top:0px;">
+                <div style="position:absolute; width:100%; top:35%">Web Page Instance</div>
+                <div class="trusted" style="width:100px; height:40px; position:absolute; left:38px; top:137px; line-height:40px">uiuc</div>
+              </div>
+
+              <canvas id="arr5" height="40" width="300" style="position:absolute; left:177px; top: 80px;"></canvas>
+              <p style="position:absolute; top:80px; left:200px; width:280px; font-size:23px">Pointer to frame buffer</p>
+              <img src="src/tab.jpg" style="position:absolute; left:460px; top: 0px; width:275px">
+              <p style="position:absolute; top:-80px; left:480px; width:250px; text-align:center; font-size:23px">Frame buffer memory pixel data</p>
+
+              <canvas id="arr6" height="100" width="80" style="position:absolute; left:580px; top: 205px;"></canvas>
+              <img src="src/nic.jpg" style="position:absolute; left:500px; top: 270px; width:200px">
+
+              <canvas id="arr7" height="40" width="300" style="position:absolute; left:278px; top: 350px;"></canvas>
+              <img src="src/monitor.png" style="position:absolute; left:0px; top: 200px; width:300px">
+              <script>
+                drawArrow(document.getElementById("arr5").getContext("2d"), 10, 10, 282, 10, 4, "white");
+                drawArrow(document.getElementById("arr6").getContext("2d"), 10, 0, 10, 65, 4, "white");
+                drawArrow(document.getElementById("arr7").getContext("2d"), 240, 10, 18, 10, 4, "white");
+              </script>
+            </div>
+          </section>
+        </div>
+
+        <div class="slide">
+          <header>Tab display isolation</header>
+          <section>
+            <div style="position:absolute; top: 150px; left:100px">
+              <div class="untrusted" style="width:180px; height:180px; position:absolute; left:0px; top:0px;">
+                <div style="position:absolute; width:100%; top:35%">Web Page Instance</div>
+                <div class="trusted" style="width:100px; height:40px; position:absolute; left:38px; top:137px; line-height:40px">google</div>
+              </div>
+
+              <div class="untrusted" style="width:180px; height:180px; position:absolute; left:0px; top:300px;">
+                <div style="position:absolute; width:100%; top:35%">Web Page Instance</div>
+                <div class="trusted" style="width:100px; height:40px; position:absolute; left:38px; top:137px; line-height:40px">uiuc</div>
+              </div>
+
+              <div style="border-style:solid; border-width:3px; border-color:#CD5C5C; position:absolute; left:184px; top:90px; width:86px"></div>
+              <div style="border-style:dashed; border-width:3px; border-color:#CD5C5C; position:absolute; left:270px; top:0px; height:500px"></div>
+
+              <img src="src/tab.jpg" style="position:absolute; left:360px; top: 100px; width:400px">
+              <div style="border-style:solid; border-width:4px; border-color:#B22222; position:absolute; left:360px; top:140px; width:395px; height:255px"></div>
+
+              <canvas id="arr4" height="300" width="300" style="position:absolute; left:177px; top: 120px;"></canvas>
+
+              <p style="position:absolute; top:440px; left:300px; width:280px">Page protections</p>
+
+              <script>
+                drawArrow(document.getElementById("arr4").getContext("2d"), 10, 280, 183, 21, 4, "#CD5C5C");
+              </script>
+            </div>
+          </section>
+        </div>
+        
+        <div class="slide">
+          <header>Storage architecture</header>
+          <section>
+            <ul class="bullets">
+              <li>Basic key-value pair object store</li>
+              <li>IBOS kernel encrypts data before storing it</li>
+              <li>Don't have to trust storage drivers and stack</li>
+              <ul class="summary">
+                <li class="sub">HTTPS gives us similar properties for NIC driver</li>
+              </ul>
+            </ul>
+          </section>
+        </div>
+
+        <div class="slide">
+          <header>Implementation</header>
+          <section>
+            <ul class="bullets">
+              <li>L4Ka::Pistachio MMU abstr. and message passing</li>
+              <li>e1000 Ethernet driver, mouse, keyboard</li>
+              <li>Framebuffer video driver + Qt software raster</li>
+              <li>WebKit and Qt</li>
+              <li>Current "Unix-like" API is uclibc + Qt</li>
+              <ul class="summary">
+                <li class="sub">Current "traditional apps" are Qt applications</li>
+                <li class="sub">Current plugin is PDF viewer</li>
+              </ul>
+              <li>Intel Core Quad CPU @ 2.33 GHz, 4GB RAM</li>                
+            </ul>
+          </section>
+        </div>
+
+        <div class="slide">
+          <header>Evaluation</header>
+          <section>
+            <ul class="bullets">
+              <li>Goal: design new OS to make web browser more secure</li>
+              <ul class="summary">
+                <li class="sub">Execute arbitrary inst. in untrusted components</li>
+                <li class="sub">Confidentiality and integrity</li>
+              </ul>
+            </ul>
+          </section>
+        </div>
+
+        <div class="slide">
+          <header>TCB</header>
+          <section>
+            <style>
+              #tcb
+              {
+              width:75%;
+              border-collapse:collapse;
+              margin: 40px auto;
+              }
+              #tcb td, #tcb th
+              {
+              font-size:35px;
+              border:2px solid #fff;
+              padding:3px 7px 2px 7px;
+              background-color:#E6E6FA;
+              color:#000;
+              }
+              #tcb th
+              {
+              font-size:40px;
+              text-align:left;
+              padding-top:5px;
+              padding-bottom:4px;
+              background-color:#6495ED;
+              color:#fff;
+              }
+              #tcb tr.alt td
+              {
+              color:#000;
+              background-color:#F8F8FF;
+              }
+              #tcb td.alt, #tcb th.alt {
+              text-align:right;
+              }
+              #tcb .indent {
+              font-size: 25px;
+              padding-left: 50px;
+              font-style: italic;
+              }
+            </style>
+
+            <table id="tcb">
+              <tr>
+                <th>Software stack</th>
+                <th class="alt">LOC</th>
+              </tr>
+              <tr>
+                <td>
+                  Firefox on Linux<br>
+                  <div class="indent">
+                    Firefox<br>
+                    GTK+ & glibc<br>
+                    X.Org<br>
+                    Linux kernel<br>
+                  </div>
+                </td>
+                <td class="alt">
+                  &gt 5,600,000<br>
+                  <div class="indent">
+                    ~ 2,100,000<br>
+                    ~ 1,200,000<br>
+                    ~ 700,000<br>
+                    ~ 1,600,000<br>
+                  </div>
+                </td>
+              </tr>
+              <tr class="alt">
+                <td>
+                  ChromeOS<br>
+                  <div class="indent">
+                    Chrome browser kernel<br>
+                    GTK+ & glibc<br>
+                    ChromeOS kernel & services<br>
+                  </div>
+                </td>
+                <td class="alt">
+                  &gt 4,400,000<br>
+                  <div class="indent">
+                    ~ 800,000<br>
+                    ~ 1,200,000<br>
+                    ~ 2,400,000<br>
+                  </div>
+                </td>
+              </tr>
+              <tr>
+                <td>
+                  IBOS<br>
+                  <div class="indent">
+                    IBOS kernel<br>
+                    L4Ka::Pistachio<br>
+                  </div>
+                </td>
+                <td class="alt">
+                  ~ 42,000<br>
+                  <div class="indent">
+                    ~ 9,000<br>
+                    ~ 33,000<br>
+                  </div>
+                </td>
+              </tr>
+              </table> 
+          </section>
+        </div>
+
+        <div class="slide" id="slide_os">
+          <header>OS and library vulnerabilities</header>
+          <section>
+            <style>
+              #os
+              {
+              width:90%;
+              border-collapse:collapse;
+              margin: 70px auto;
+              margin-bottom: 0px;
+              }
+              #os tr {
+              color:#000;
+              }
+              #os td, #os th
+              {
+              font-size:35px;
+              border:2px solid #fff;
+              padding:3px 7px 2px 7px;
+              background-color:#E6E6FA;
+              }
+              #os th
+              {
+              font-size:35px;
+              text-align:left;
+              padding-top:5px;
+              padding-bottom:4px;
+              background-color:#6495ED;
+              color:#fff;
+              }
+              #os tr.alt td
+              {
+              background-color:#F8F8FF;
+              }
+              #os td.alt, #os th.alt {
+              text-align:center;
+              }
+              #os .indent {
+              font-size: 30px;
+              font-style: italic;
+              }
+            </style>
+            
+            <table id="os">
+              <tr>
+                <th>Affected component</th>
+                <th class="alt">Num.</th>
+                <th class="alt">Prevented</th>
+              </tr>
+              <tr>
+                <td>
+                  Linux overall<br>
+                  <div class="indent" style="padding-left:50px">
+                    File system<br>
+                    Network stack<br>
+                    <span id="other1">Other<br></span>
+                  </div>
+                </td>
+                <td class="alt">
+                  21<br>
+                  <div class="indent">
+                    12<br>
+                    5<br>
+                    <span id="other2">4<br></span>
+                  </div>
+                </td>
+                <td class="alt">
+                  20 (95%)<br>
+                  <div class="indent">
+                    12 (100%)<br>
+                    5 (100%)<br>
+                    <span id="other3">3 (75%)<br></span>
+                  </div>
+                </td>
+              </tr>
+              <tr class="alt">
+                <td>X Server</td>
+                <td class="alt">2</td>
+                <td class="alt">2 (100%)</td>
+              </tr>
+              <tr>
+                <td>GTK+ & glibc</td>
+                <td class="alt">5</td>
+                <td class="alt">5 (100%)</td>
+              </tr>
+              <tr class="alt">
+                <td style="background-color:#B0C4DE">Overall</td>
+                <td class="alt" style="background-color:#B0C4DE">28</td>
+                <td class="alt" style="background-color:#B0C4DE">27 (96%)</td>
+              </tr>
+            </table>
+            <p class="center">Published in CVE in 2010 as of Sep. 18</p>
+            <script>
+              var os_counter = 0;
+              document.getElementById("slide_os").animate = function() {
+                if(os_counter == 0) {
+                  document.getElementById("other1").style.color = "red";
+                  document.getElementById("other2").style.color = "red";
+                  document.getElementById("other3").style.color = "red";
+                  os_counter++;
+                  return true;
+                }
+                return false;
+              };
+              document.getElementById("slide_os").revert = function() {
+                if(os_counter == 1) {
+                  document.getElementById("other1").style.color = "black";
+                  document.getElementById("other2").style.color = "black";
+                  document.getElementById("other3").style.color = "black";
+                  os_counter--;
+                  return true;
+                }
+                return false;
+              };
+            </script>
+
+          </section>
+        </div>
+
+        <div class="slide" id="slide_browser">
+          <header>Browser vulnerabilities</header>
+          <section>
+            <style>
+              #browser
+              {
+              width:100%;
+              border-collapse:collapse;
+              margin: 130px auto;
+              margin-bottom: 0px;
+              }
+              #browser tr {
+              color:#000;
+              }
+              #browser td, #browser th
+              {
+              font-size:28px;
+              border:2px solid #fff;
+              padding:3px 7px 2px 7px;
+              background-color:#E6E6FA;
+              text-align:center;
+              }
+              #browser th
+              {
+              font-size:28px;
+              padding-top:5px;
+              padding-bottom:4px;
+              background-color:#6495ED;
+              color:#fff;
+              }
+              #browser tr.alt td
+              {
+              background-color:#F8F8FF;
+              }
+            </style>
+            <table id="browser">
+              <tr>
+                <th>Category</th>
+                <th>Num.</th>
+                <th>Chrome<br>Contained</th>
+                <th>IBOS<br>Contained or prevented</th>
+              </tr>
+              <tr id="memory">
+                <td>Memory exploitation</td>
+                <td>82</td>
+                <td>71 (86%)</td>
+                <td>79 (96%)</td>
+              </tr>
+              <!-- <tr class="alt">
+                <td>XSS</td>
+                <td>14</td>
+                <td>12 (87%)</td>
+                <td>14 (100%)</td>
+              </tr>
+              <tr>
+                <td>SOP circumvention</td>
+                <td>21</td>
+                <td>0 (0%)</td>
+                <td>21 (100%)</td>
+              </tr> -->
+              <tr class="alt" id="sandbox">
+                <td>Sandbox bypassing</td>
+                <td>12</td>
+                <td>0 (0%)</td>
+                <td>12 (100%)</td>
+              </tr>
+              <!-- <tr>
+                <td>Interface spoofing</td>
+                <td>6</td>
+                <td>0 (0%)</td>
+                <td>6 (100%)</td>
+              </tr>
+              <tr class="alt">
+                <td>UI design flaw</td>
+                <td>17</td>
+                <td>0 (0%)</td>
+                <td>0 (0%)</td>
+              </tr>
+              <tr>
+                <td>Misc</td>
+                <td>22</td>
+                <td>0 (0%)</td>
+                <td>3 (14%)</td>
+              </tr> -->
+              <tr>
+                <td>Other</td>
+                <td>81</td>
+                <td>12 (15%)</td>
+                <td>44 (54%)</td>
+              </tr>
+              <tr class="alt" style="font-weight:bold">
+                <td style="background-color:#B0C4DE">Overall</td>
+                <td style="background-color:#B0C4DE">175</td>
+                <td style="background-color:#B0C4DE">83 (46%)</td>
+                <td style="background-color:#B0C4DE">135 (77%)</td>
+              </tr>
+            </table>
+            <p class="center">Bugs labeled as "security" in Google Chrome's bug track</p>
+            <script>
+              var browser_counter = 0;
+              document.getElementById("slide_browser").animate = function() {
+                if(browser_counter == 0) {
+                  document.getElementById("memory").style.color = "red";
+                  browser_counter++;
+                  return true;
+                }
+                if(browser_counter == 1) {
+                  document.getElementById("memory").style.color = "black";
+                  document.getElementById("sandbox").style.color = "red";
+                  browser_counter++;
+                  return true;
+                }
+                return false;
+              };
+              document.getElementById("slide_browser").revert = function() {
+                if(browser_counter == 1) {
+                  document.getElementById("memory").style.color = "black";
+                  browser_counter--;
+                  return true;
+                }
+                if(browser_counter == 2) {
+                  document.getElementById("memory").style.color = "red";
+                  document.getElementById("sandbox").style.color = "black";
+                  browser_counter--;
+                  return true;
+                }
+                return false;
+              };
+            </script>
+          </section>
+        </div>
+
+        <div class="slide" id="slide_perf">
+          <header>Page load latency time</header>
+          <section>
+            <style>
+              #perf{
+              position:absolute;
+              top:120px;
+              left:50px;
+              background-color:white;
+              }
+              #perf-text{
+              position:absolute;
+              top:120px;
+              left:50px;
+              height:500px;
+              width:800px;
+              color:black;
+              font-size:20px;
+              }
+            </style>
+            <canvas id="perf" width="800" height="500"></canvas>
+            <script>
+              var perf_ctx = document.getElementById("perf").getContext("2d");
+              perf_ctx.lineWidth = 1;
+              perf_ctx.strokeStyle = "black";
+              var xoff = 150;
+              var yoff = 80;
+              var yinv = 50;
+              var xinv = 100;
+
+              for (var i = 0; i < 7; i++){
+                 perf_ctx.beginPath();
+                 perf_ctx.moveTo(xoff-5, yoff+i*yinv);
+                 perf_ctx.lineTo(xoff+xinv*6, yoff+i*yinv);
+                 perf_ctx.stroke();
+              }
+
+              perf_ctx.beginPath();
+              perf_ctx.moveTo(xoff, yoff);
+              perf_ctx.lineTo(xoff, yoff+yinv*6+5);
+              perf_ctx.stroke();
+
+              for (var i = 0; i < 6; i++){
+                 perf_ctx.beginPath();
+                 perf_ctx.moveTo(xoff+xinv+i*xinv, yoff+6*yinv);
+                 perf_ctx.lineTo(xoff+xinv+i*xinv, yoff+6*yinv+5);
+                 perf_ctx.stroke();
+              }
+              perf_ctx.fillStyle = "#4169E1";
+              perf_ctx.fillRect(xoff+5, yoff-50, 20, 20);
+              perf_ctx.fillRect(xoff+10+xinv*0, yoff+300-58.6, 20, 58.6);
+              perf_ctx.fillRect(xoff+10+xinv*1, yoff+300-32.3, 20, 32.3);
+              perf_ctx.fillRect(xoff+10+xinv*2, yoff+300-55.0, 20, 55.0);
+              perf_ctx.fillRect(xoff+10+xinv*3, yoff+300-52.3, 20, 52.3);
+              perf_ctx.fillRect(xoff+10+xinv*4, yoff+300-271.3, 20, 271.3);
+              perf_ctx.fillRect(xoff+10+xinv*5, yoff+300-82.9, 20, 82.9);
+
+              perf_ctx.fillStyle = "#B22222";
+              perf_ctx.fillRect(xoff+155, yoff-50, 20, 20);
+              perf_ctx.fillRect(xoff+30+xinv*0, yoff+300-47.0, 20, 47.0);
+              perf_ctx.fillRect(xoff+30+xinv*1, yoff+300-37.2, 20, 37.2);
+              perf_ctx.fillRect(xoff+30+xinv*2, yoff+300-67.3, 20, 67.3);
+              perf_ctx.fillRect(xoff+30+xinv*3, yoff+300-50.6, 20, 50.6);
+              perf_ctx.fillRect(xoff+30+xinv*4, yoff+300-224.0, 20, 224.0);
+              perf_ctx.fillRect(xoff+30+xinv*5, yoff+300-49.0, 20, 49.0);
+
+              perf_ctx.fillStyle = "#6B8E23";
+              perf_ctx.fillRect(xoff+305, yoff-50, 20, 20);
+              perf_ctx.fillRect(xoff+50+xinv*0, yoff+300-168.5, 20, 168.5);
+              perf_ctx.fillRect(xoff+50+xinv*1, yoff+300-43.8, 20, 43.8);
+              perf_ctx.fillRect(xoff+50+xinv*2, yoff+300-62.6, 20, 62.6);
+              perf_ctx.fillRect(xoff+50+xinv*3, yoff+300-47.6, 20, 47.6);
+              perf_ctx.fillRect(xoff+50+xinv*4, yoff+300-220.3, 20, 220.3);
+              perf_ctx.fillRect(xoff+50+xinv*5, yoff+300-69.6, 20, 69.6);
+
+              perf_ctx.fillStyle = "#9400D3";
+              perf_ctx.fillRect(xoff+455, yoff-50, 20, 20);
+              perf_ctx.fillRect(xoff+70+xinv*0, yoff+300-46.2, 20, 46.2);
+              perf_ctx.fillRect(xoff+70+xinv*1, yoff+300-23.1, 20, 23.1);
+              perf_ctx.fillRect(xoff+70+xinv*2, yoff+300-66.4, 20, 66.4);
+              perf_ctx.fillRect(xoff+70+xinv*3, yoff+300-30.8, 20, 30.8);
+              perf_ctx.fillRect(xoff+70+xinv*4, yoff+300-206.4, 20, 206.4);
+              perf_ctx.fillRect(xoff+70+xinv*5, yoff+300-45.9, 20, 45.9);              
+            </script>
+            <div id="perf-text">
+              <span style="position:absolute; top:30px; left:180px">IBOS</span>
+              <span style="position:absolute; top:30px; left:330px">IBOS-Linux</span>
+              <span style="position:absolute; top:30px; left:480px">Firefox</span>
+              <span style="position:absolute; top:30px; left:630px">Chrome</span>
+
+              <span style="position:absolute; top:70px; left:100px">3000</span>
+              <span style="position:absolute; top:120px; left:100px">2500</span>
+              <span style="position:absolute; top:170px; left:100px">2000</span>
+              <span style="position:absolute; top:220px; left:100px">1500</span>
+              <span style="position:absolute; top:270px; left:100px">1000</span>
+              <span style="position:absolute; top:320px; left:111px"> 500</span>
+              <span style="position:absolute; top:370px; left:133px">   0</span>
+
+              <span style="position:absolute; top:420px; left:140px">Google Maps</span>
+              <span style="position:absolute; top:420px; left:280px">Bing</span>
+              <span style="position:absolute; top:420px; left:360px">Craigslist</span>
+              <span style="position:absolute; top:420px; left:455px">CS@Illinois</span>
+              <span style="position:absolute; top:420px; left:585px">Wiki</span>
+              <span style="position:absolute; top:420px; left:660px">Facebook</span>
+
+              <div style="-webkit-transform: rotate(270deg); -moz-transform: rotate(270deg); position:absolute; left:-90px; top:220px;">Page load latency in milliseconds</div>
+
+              <div id="uiuc_perf" style="border-style:solid; border-width:4px; border-color:#B22222; position:absolute; left:448px; top:280px; width:105px; height:160px; visibility:hidden"></div>
+              <script>
+                var perf_counter = 0;
+                document.getElementById("slide_perf").animate = function() {
+                  if (perf_counter == 0) {
+                    document.getElementById("uiuc_perf").style.visibility = "visible";
+                    perf_counter++;
+                    return true;
+                  } 
+                  return false;
+                }
+                document.getElementById("slide_perf").revert = function() {
+                  if (perf_counter == 1) {
+                    document.getElementById("uiuc_perf").style.visibility = "hidden";
+                    perf_counter--;
+                    return true;
+                  }
+                  return false;
+                }
+              </script>
+            </div>
+          </section>
+        </div>
+
+        <div class="slide">
+          <header>Conclusions</header>
+          <section>
+            <ul class="bullets">
+              <li>Browser abstractions as the first-class OS abstractions</li>
+              <ul class="summary">
+                <li class="sub">Trust: reduced TCB for web browser</li>
+                <li class="sub">Protection: withstand attacks to most components</li>
+              </ul>
+            </ul>
+          </section>
+        </div>
+
+        <div class="slide">
+          <header>Thanks!</header>
+          <section>
+            <ul class="bullets">
+              Questions?
+            </ul>
+          </section>
+        </div>
+
+        
+        
+      </div> <!-- slides -->
+
+    </div> <!-- presentation -->
+
+    <script>
+      (function() {
+        var doc = document;
+        var disableBuilds = true;
+
+        var ctr = 0;
+        var spaces = /\s+/, a1 = [''];
+
+        var toArray = function(list) {
+          return Array.prototype.slice.call(list || [], 0);
+        };
+
+        var byId = function(id) {
+          if (typeof id == 'string') { return doc.getElementById(id); }
+          return id;
+        };
+
+        var query = function(query, root) {
+          if (!query) { return []; }
+          if (typeof query != 'string') { return toArray(query); }
+          if (typeof root == 'string') {
+            root = byId(root);
+            if(!root){ return []; }
+          }
+
+          root = root || document;
+          var rootIsDoc = (root.nodeType == 9);
+          var doc = rootIsDoc ? root : (root.ownerDocument || document);
+
+          // rewrite the query to be ID rooted
+          if (!rootIsDoc || ('>~+'.indexOf(query.charAt(0)) >= 0)) {
+            root.id = root.id || ('qUnique' + (ctr++));
+            query = '#' + root.id + ' ' + query;
+          }
+          // don't choke on something like ".yada.yada >"
+          if ('>~+'.indexOf(query.slice(-1)) >= 0) { query += ' *'; }
+
+          return toArray(doc.querySelectorAll(query));
+        };
+
+        var strToArray = function(s) {
+          if (typeof s == 'string' || s instanceof String) {
+            if (s.indexOf(' ') < 0) {
+              a1[0] = s;
+              return a1;
+            } else {
+              return s.split(spaces);
+            }
+          }
+          return s;
+        };
+
+        var addClass = function(node, classStr) {
+          classStr = strToArray(classStr);
+          var cls = ' ' + node.className + ' ';
+          for (var i = 0, len = classStr.length, c; i < len; ++i) {
+            c = classStr[i];
+            if (c && cls.indexOf(' ' + c + ' ') < 0) {
+              cls += c + ' ';
+            }
+          }
+          node.className = cls.trim();
+        };
+
+        var removeClass = function(node, classStr) {
+          var cls;
+          if (classStr !== undefined) {
+            classStr = strToArray(classStr);
+            cls = ' ' + node.className + ' ';
+            for (var i = 0, len = classStr.length; i < len; ++i) {
+              cls = cls.replace(' ' + classStr[i] + ' ', ' ');
+            }
+            cls = cls.trim();
+          } else {
+            cls = '';
+          }
+          if (node.className != cls) {
+            node.className = cls;
+          }
+        };
+
+        var toggleClass = function(node, classStr) {
+          var cls = ' ' + node.className + ' ';
+          if (cls.indexOf(' ' + classStr.trim() + ' ') >= 0) {
+            removeClass(node, classStr);
+          } else {
+            addClass(node, classStr);
+          }
+        };
+
+        var ua = navigator.userAgent;
+        var isFF = parseFloat(ua.split('Firefox/')[1]) || undefined;
+        var isWK = parseFloat(ua.split('WebKit/')[1]) || undefined;
+        var isOpera = parseFloat(ua.split('Opera/')[1]) || undefined;
+
+        var canTransition = (function() {
+          var ver = parseFloat(ua.split('Version/')[1]) || undefined;
+          // test to determine if this browser can handle CSS transitions.
+          var cachedCanTransition = 
+            (isWK || (isFF && isFF > 3.6 ) || (isOpera && ver >= 10.5));
+          return function() { return cachedCanTransition; }
+        })();
+
+        //
+        // Slide class
+        //
+        var Slide = function(node, idx) {
+          this._node = node;
+          if (idx >= 0) {
+            this._count = idx + 1;
+          }
+          if (this._node) {
+            addClass(this._node, 'slide distant-slide');
+          }
+          this._makeCounter();
+          this._makeBuildList();
+        };
+
+        Slide.prototype = {
+          _node: null,
+          _count: 0,
+          _buildList: [],
+          _visited: false,
+          _currentState: '',
+          _states: [ 'distant-slide', 'far-past',
+                     'past', 'current', 'future',
+                     'far-future', 'distant-slide' ],
+          setState: function(state) {
+            if (typeof state != 'string') {
+              state = this._states[state];
+            }
+            if (state == 'current' && !this._visited) {
+              this._visited = true;
+              this._makeBuildList();
+            }
+            removeClass(this._node, this._states);
+            addClass(this._node, state);
+            this._currentState = state;
+
+            // delay first auto run. Really wish this were in CSS.
+            /*
+            this._runAutos();
+            */
+            var _t = this;
+            setTimeout(function(){ _t._runAutos(); } , 400);
+          },
+          _makeCounter: function() {
+            if(!this._count || !this._node) { return; }
+            var c = doc.createElement('span');
+            c.innerHTML = this._count;
+            c.className = 'counter';
+            this._node.appendChild(c);
+          },
+          _makeBuildList: function() {
+            this._buildList = [];
+            if (disableBuilds) { return; }
+            if (this._node) {
+              this._buildList = query('[data-build] > *', this._node);
+            }
+            this._buildList.forEach(function(el) {
+              addClass(el, 'to-build');
+            });
+          },
+          _runAutos: function() {
+            if (this._currentState != 'current') {
+              return;
+            }
+            // find the next auto, slice it out of the list, and run it
+            var idx = -1;
+            this._buildList.some(function(n, i) {
+              if (n.hasAttribute('data-auto')) {
+                idx = i;
+                return true;
+              }
+              return false;
+            });
+            if (idx >= 0) {
+              var elem = this._buildList.splice(idx, 1)[0];
+              var transitionEnd = isWK ? 'webkitTransitionEnd' : (isFF ? 'mozTransitionEnd' : 'oTransitionEnd');
+              var _t = this;
+              if (canTransition()) {
+                var l = function(evt) {
+                  elem.parentNode.removeEventListener(transitionEnd, l, false);
+                  _t._runAutos();
+                };
+                elem.parentNode.addEventListener(transitionEnd, l, false);
+                removeClass(elem, 'to-build');
+              } else {
+                setTimeout(function() {
+                  removeClass(elem, 'to-build');
+                  _t._runAutos();
+                }, 400);
+              }
+            }
+          },
+          buildNext: function() {
+            if (!this._buildList.length) {
+              return false;
+            }
+            removeClass(this._buildList.shift(), 'to-build');
+            return true;
+          },
+          animate: function() {
+            if (this._node.animate) {
+              return this._node.animate();
+            }
+            return false;
+          },
+          revert: function() {
+            if (this._node.revert) {
+              return this._node.revert();
+            }
+            return false;
+          },
+        };
+
+        //
+        // SlideShow class
+        //
+        var SlideShow = function(slides) {
+          this._slides = (slides || []).map(function(el, idx) {
+            return new Slide(el, idx);
+          });
+
+          var h = window.location.hash;
+          try {
+            this.current = parseInt(h.split('#slide')[1], 10);
+          }catch (e) { /* squeltch */ }
+          this.current = isNaN(this.current) ? 1 : this.current;
+          var _t = this;
+          doc.addEventListener('keydown', 
+              function(e) { _t.handleKeys(e); }, false);
+          doc.addEventListener('mousewheel', 
+              function(e) { _t.handleWheel(e); }, false);
+          doc.addEventListener('click', 
+              function(e) { _t.handleClick(e); }, false);
+          doc.addEventListener('mousemove', 
+              function(e) { _t.handleMouseMove(e); }, false);
+          doc.addEventListener('DOMMouseScroll', 
+              function(e) { _t.handleWheel(e); }, false);
+          doc.addEventListener('touchstart', 
+              function(e) { _t.handleTouchStart(e); }, false);
+          doc.addEventListener('touchend', 
+              function(e) { _t.handleTouchEnd(e); }, false);
+          window.addEventListener('popstate', 
+              function(e) { if (e.state) { _t.go(e.state); } }, false);
+          this._update();          
+        };
+
+        SlideShow.prototype = {
+          _slides: [],
+          _update: function(dontPush) {
+            document.querySelector('#presentation-counter').innerText = this.current;
+            if (history.pushState) {
+              if (!dontPush) {
+                history.replaceState(this.current, 'Slide ' + this.current, '#slide' + this.current);
+              }
+            } else {
+              window.location.hash = 'slide' + this.current;
+            }
+            for (var x = this.current-1; x < this.current + 7; x++) {
+              if (this._slides[x-4]) {
+                this._slides[x-4].setState(Math.max(0, x-this.current));
+              }
+            }
+          },
+
+          current: 0,
+          next: function() {
+            if (this._slides[this.current-1].animate()) {
+              return;
+            }
+            if (!this._slides[this.current-1].buildNext()) {
+              this.current = Math.min(this.current + 1, this._slides.length);
+              this._update();
+            }
+          },
+          prev: function() {
+            if (this._slides[this.current-1].revert()) {
+              return;
+            }
+            this.current = Math.max(this.current-1, 1);
+            this._update();
+          },
+          go: function(num) {
+            this.current = num;
+            this._update(true);
+          },
+
+          _notesOn: false,
+          showNotes: function() {
+            var isOn = this._notesOn = !this._notesOn;
+            query('.notes').forEach(function(el) {
+              el.style.display = (notesOn) ? 'block' : 'none';
+            });
+          },
+          switch3D: function() {
+            toggleClass(document.body, 'three-d');
+          },
+          handleWheel: function(e) {
+            var delta = 0;
+            if (e.wheelDelta) {
+              delta = e.wheelDelta/120;
+              if (isOpera) {
+                delta = -delta;
+              }
+            } else if (e.detail) {
+              delta = -e.detail/3;
+            }
+
+            if (delta > 0 ) {
+              this.prev();
+              return;
+            }
+            if (delta < 0 ) {
+              this.next();
+              return;
+            }
+          },
+          handleClick: function(e) {
+            if (window.innerWidth / e.clientX > 3) {
+              this.prev();
+            } else {
+              this.next();
+            }
+          },
+          handleMouseMove: function(e) {
+            if (window.innerWidth / e.clientX > 3) {
+              document.body.style.cursor = 'w-resize';
+            } else {
+              document.body.style.cursor = 'e-resize';
+            }
+          },
+          handleKeys: function(e) {
+            
+            if (/^(input|textarea)$/i.test(e.target.nodeName)) return;
+            
+            switch (e.keyCode) {
+              case 37: // left arrow
+                this.prev(); break;
+              case 39: // right arrow
+              case 32: // space
+                this.next(); break;
+              case 50: // 2
+                this.showNotes(); break;
+              case 51: // 3
+                this.switch3D(); break;
+            }
+          },
+          _touchStartX: 0,
+          handleTouchStart: function(e) {
+            this._touchStartX = e.touches[0].pageX;
+          },
+          handleTouchEnd: function(e) {
+            var delta = this._touchStartX - e.changedTouches[0].pageX;
+            var SWIPE_SIZE = 150;
+            if (delta > SWIPE_SIZE) {
+              this.next();
+            } else if (delta< -SWIPE_SIZE) {
+              this.prev();
+            }
+          },
+        };
+
+        // Initialize
+        var slideshow = new SlideShow(query('.slide'));
+      })();
+    </script>
+
+    <!--[if lt IE 9]>
+    <script 
+      src="http://ajax.googleapis.com/ajax/libs/chrome-frame/1/CFInstall.min.js">
+    </script>
+		<script>CFInstall.check({ mode: "overlay" });</script>
+    <![endif]-->
+  </body>
+</html>
